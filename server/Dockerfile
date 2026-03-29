@@ -1,25 +1,40 @@
-FROM python:3.12-slim
+# client/Dockerfile - PFedRec Client
+# Identical to server for consistency
+
+FROM python:3.12-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install system dependencies (minimal for slim image)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install PyTorch CPU version (Python 3.12 compatible)
+# Install PyTorch CPU version (pre-built wheel)
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
 
-# Copy server code
-COPY server/app.py ./app.py
-COPY server/aggregator.py ./aggregator.py
-COPY server/config.py ./config.py
+# Copy client code
+COPY client/ ./client/
+COPY utils/ ./utils/
+COPY data/ ./data/
+COPY config.yaml .
 
-EXPOSE 5000
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "app:app"]
+# Expose port (for client API endpoints)
+EXPOSE 8001
+
+# Run client
+CMD ["python", "-u", "client/main.py"]

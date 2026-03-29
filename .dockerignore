@@ -1,4 +1,4 @@
-# .gitignore - Version control exclusions
+# .dockerignore - Optimize Docker build context
 
 # Python
 __pycache__/
@@ -34,50 +34,38 @@ env/
 *.swp
 *.swo
 *~
-.project
-.pydevproject
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs and outputs
+# Logs
 logs/
 *.log
 tensorboard/
-runs/
 
-# Data files (large, regenerate from source)
+# Data (mount at runtime, don't bake into image)
 data/*.csv
 data/ml-100k/
 !data/.gitkeep
-!data/prepare.py
 
-# Results and checkpoints (regeneratable)
+# Results/outputs
 results/
 checkpoints/
 figures/
-*.pt
-*.pth
 
-# Local config
+# Local config overrides
 config.local.yaml
 *.env
 .env.local
-*.secrets
 
-# Docker
-docker-compose.override.yml
-
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-
-# Testing
+# Tests
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
 
-# Documentation build
+# Documentation
 docs/_build/
+*.pdf
+*.png
+*.jpg

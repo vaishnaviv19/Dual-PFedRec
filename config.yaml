@@ -1,0 +1,64 @@
+# config.yaml - PFedRec Configuration (Paper Section 6.2)
+
+# ===== Dataset =====
+dataset:
+  name: "movielens-100k"
+  path: "data/ml-100k/"
+  min_interactions: 20  # Filter users with <20 ratings
+  test_ratio: 0.2       # Leave-one-out: last interaction = test
+
+# ===== Model Architecture (Section 4.1, 6.2) =====
+model:
+  item_embedding_dim: 32
+  score_function:
+    hidden_dims: [64, 32]  # MLP: 32 -> 64 -> 32 -> 1
+    activation: "relu"
+    output_activation: "sigmoid"
+  
+# ===== Training Hyperparameters (Section 6.2) =====
+training:
+  # Optimizers
+  lr_score: 0.01          # η for score function θₛ
+  lr_item: 0.001          # η' for item embedding θₘ
+  batch_size: 256
+  epochs_local: 1         # E in Algorithm 1
+  
+  # Negative Sampling (Eq. 8)
+  negative_sampling_ratio: 4  # 4 negatives per positive
+  
+  # Federated Learning
+  total_rounds: 100
+  clients_per_round: 10       # Sample C×N clients per round
+  aggregation: "fedavg"       # FedAvg (Algorithm 1, Line 6)
+  
+# ===== Evaluation (Section 6.1) =====
+evaluation:
+  metrics: ["hr@10", "ndcg@10"]
+  eval_every_round: 1
+  test_batch_size: 512
+
+# ===== Privacy (Section 6.6) =====
+privacy:
+  enable_ldp: false
+  ldp_lambda: 0.0  # Laplacian noise strength [0, 0.5]
+
+# ===== System =====
+system:
+  server:
+    host: "0.0.0.0"
+    port: 8000
+    workers: 4
+  client:
+    host: "0.0.0.0"
+    port: 8001  # Will be offset per client
+  communication:
+    timeout: 30
+    retry_attempts: 3
+
+# ===== Logging =====
+logging:
+  level: "INFO"
+  tensorboard: true
+  log_dir: "logs/"
+  save_checkpoints: true
+  checkpoint_every: 10  # rounds

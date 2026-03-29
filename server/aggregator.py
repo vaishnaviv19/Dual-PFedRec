@@ -1,60 +1,144 @@
+# server/aggregator.py
+"""
+Server-side Aggregation Logic - Algorithm 1 (ServerExecute)
+Implements FedAvg for item embeddings (θₘ)
+"""
+
 import torch
 import numpy as np
-from config import Config
+from typing import List, Dict, Optional
+from collections import defaultdict
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class FederatedAggregator:
-    """Implements FedAvg aggregation for item embeddings (Algorithm 1, Line 6)"""
+    """
+    Aggregates item embeddings from clients using FedAvg
+    (Algorithm 1, Line 6: θₘ ← (1/n) Σ θₘᵢ)
+    """
     
-    def __init__(self, config):
-        self.config = config
-        self.global_embedding = None
+    def __init__(self, num_items: int, embedding_dim: int, 
+                 aggregation_method: str = "fedavg"):
+        self.num_items = num_items
+        self.embedding_dim = embedding_dim
+        self.aggregation_method = aggregation_method
+        
+        # Initialize global item embedding randomly
+        self.global_embedding = torch.randn(num_items, embedding_dim) * 0.01
+        
+        # Track client updates
+        self.client_updates: Dict[str, Dict] = {}
         self.current_round = 0
-        self.client_count = 0
-        self.client_updates = {}
-        self.reset()
+        
+        logger.info(f"Aggregator initialized: {num_items} items, "
+                   f"{embedding_dim}d embeddings")
     
     def reset(self):
-        """Initialize global item embedding"""
-        self.global_embedding = torch.rand(
-            self.config.NUM_ITEMS, 
-            self.config.EMBEDDING_SIZE
-        )
+        """Reset aggregator state for new experiment"""
+        self.global_embedding = torch.randn(
+            self.num_items, self.embedding_dim) * 0.01
+        self.client_updates.clear()
         self.current_round = 0
-        self.client_updates = {}
-        self.client_count = 0
     
-    def get_global_embedding(self):
-        """Return current global item embedding"""
-        return self.global_embedding.clone()
-    
-    def aggregate(self, client_id, client_embedding, num_samples):
+    def receive_update(self, client_id: str, embedding: torch.Tensor, 
+                      num_samples: int, round_num: int) -> bool:
         """
-        Aggregate client updates using FedAvg
-        Paper Section 4.3: Server aggregates only item embeddings (theta_m)
+        Receive and store client update
+        
+        Args:
+            client_id: Unique client identifier
+            embedding: Fine-tuned item embedding θₘᵢ (num_items × embedding_dim)
+            num_samples: Number of training samples used by client
+            round_num: Current federated round
+            
+        Returns:
+            success: Whether update was accepted
         """
+        if round_num != self.current_round:
+            logger.warning(f"Stale update from client {client_id}: "
+                          f"round {round_num} vs current {self.current_round}")
+            return False
+        
+        # Validate embedding shape
+        if embedding.shape != (self.num_items, self.embedding_dim):
+            logger.error(f"Invalid embedding shape from client {client_id}: "
+                        f"{embedding.shape} vs expected "
+                        f"({self.num_items}, {self.embedding_dim})")
+            return False
+        
+        # Store update
         self.client_updates[client_id] = {
-            'embedding': client_embedding,
-            'samples': num_samples
+            "embedding": embedding,
+            "samples": num_samples,
+            "timestamp": torch.cuda.current_device() if torch.cuda.is_available() else -1
         }
-        self.client_count = len(self.client_updates)
         
-        # Check if enough clients have reported
-        if self.client_count >= self.config.MIN_CLIENTS_PER_ROUND:
-            self._perform_aggregation()
+        logger.info(f"Received update from client {client_id} "
+                   f"(round {round_num}, {num_samples} samples)")
+        return True
     
-    def _perform_aggregation(self):
-        """Perform FedAvg aggregation (Algorithm 1, Line 6)"""
-        total_samples = sum(u['samples'] for u in self.client_updates.values())
+    def aggregate(self, min_clients: int = 2) -> Optional[torch.Tensor]:
+        """
+        Perform FedAvg aggregation (Algorithm 1, Line 6)
         
-        # Weighted average based on client data size
+        θₘ ← (1/n) Σᵢ₌₁ⁿ θₘᵢ   [weighted by sample count]
+        
+        Args:
+            min_clients: Minimum clients required before aggregating
+            
+        Returns:
+            new_global_embedding: Aggregated embedding, or None if not enough clients
+        """
+        if len(self.client_updates) < min_clients:
+            logger.info(f"Waiting for more clients: "
+                       f"{len(self.client_updates)}/{min_clients}")
+            return None
+        
+        if self.aggregation_method == "fedavg":
+            new_embedding = self._fedavg_aggregate()
+        else:
+            raise ValueError(f"Unknown aggregation method: {self.aggregation_method}")
+        
+        # Update global state
+        self.global_embedding = new_embedding
+        self.current_round += 1
+        self.client_updates.clear()
+        
+        logger.info(f"✓ Aggregation complete: Round {self.current_round}, "
+                   f"{len(self.client_updates) + min_clients} clients aggregated")
+        
+        return new_embedding
+    
+    def _fedavg_aggregate(self) -> torch.Tensor:
+        """
+        FedAvg: Weighted average based on client sample counts
+        """
+        total_samples = sum(u["samples"] for u in self.client_updates.values())
+        
+        if total_samples == 0:
+            # Fallback to simple average
+            embeddings = [u["embedding"] for u in self.client_updates.values()]
+            return torch.stack(embeddings).mean(dim=0)
+        
+        # Weighted average
         aggregated = torch.zeros_like(self.global_embedding)
         for update in self.client_updates.values():
-            weight = update['samples'] / total_samples
-            aggregated += update['embedding'] * weight
+            weight = update["samples"] / total_samples
+            aggregated += update["embedding"] * weight
         
-        self.global_embedding = aggregated
-        self.current_round += 1
-        self.client_updates = {}
-        self.client_count = 0
-        
-        print(f"✓ Round {self.current_round} aggregation complete")
+        return aggregated
+    
+    def get_global_embedding(self) -> torch.Tensor:
+        """Return current global item embedding for client download"""
+        return self.global_embedding.clone()
+    
+    def get_stats(self) -> Dict:
+        """Return aggregator statistics for monitoring"""
+        return {
+            "current_round": self.current_round,
+            "pending_updates": len(self.client_updates),
+            "embedding_shape": list(self.global_embedding.shape),
+            "embedding_norm": self.global_embedding.norm().item()
+        }
