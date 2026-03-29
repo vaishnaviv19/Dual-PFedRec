@@ -1,0 +1,27 @@
+# PFedRec System Configuration
+
+# Data Settings
+dataset: "ml-100k"   # MovieLens 100K
+num_users: 943       # Number of users in ML-100K
+num_items: 1682      # Number of items in ML-100K
+num_negatives: 4     # Number of negative samples per positive item during training
+
+# Model Settings
+embedding_size: 32   # Dimension of item embeddings
+client_layers: [64, 32, 16, 1]  # MLP architecture for the personalized score function
+
+# Training Settings
+global_rounds: 30    # Number of federated communication rounds
+local_epochs_step1: 2 # Local epochs for updating score function (Item embedding fixed)
+local_epochs_step2: 2 # Local epochs for updating item embedding (Score function fixed)
+batch_size: 256
+lr: 0.001            # Learning rate
+weight_decay: 1e-4   # L2 Regularization
+
+# System/FL Settings
+fraction_fit: 0.1    # Fraction of clients to sample per round (e.g. 0.1 = ~94 clients)
+min_clients: 10      # Minimum clients required to start a round
+server_host: "0.0.0.0"
+server_port: 8000
+client_host: "0.0.0.0"
+client_port_start: 8001

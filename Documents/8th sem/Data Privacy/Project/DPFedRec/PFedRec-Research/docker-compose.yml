@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  pfedrec-server:
+    build:
+      context: .
+      dockerfile: src/server/Dockerfile
+    container_name: pfedrec-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./src/server:/app/src/server
+    networks:
+      - pfedrec-net
+
+  pfedrec-client-worker:
+    build:
+      context: .
+      dockerfile: src/client/Dockerfile
+    container_name: pfedrec-client-worker
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./src/client:/app/src/client
+      - ./src/models:/app/src/models
+      - ./src/data:/app/src/data
+      - ./src/utils:/app/src/utils
+      - ./data_raw:/app/data_raw  # Cache the dataset to avoid redownloading
+    depends_on:
+      - pfedrec-server
+    networks:
+      - pfedrec-net
+
+networks:
+  pfedrec-net:
+    driver: bridge
