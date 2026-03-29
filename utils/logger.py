@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Union
 import json
+import numpy as np
 
 # Optional: TensorBoard
 try:

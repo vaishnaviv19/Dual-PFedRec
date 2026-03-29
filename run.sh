@@ -54,14 +54,14 @@ prepare_data() {
     if [ ! -f "${DATA_DIR}/ml-100k/u.data" ]; then
         log_warn "MovieLens-100K data not found at ${DATA_DIR}/ml-100k/u.data"
         log_info "Download from: https://grouplens.org/datasets/movielens/100k/"
-        log_info "Then run: python data/prepare.py"
+        log_info "Then run: python data/prepare_data.py"
         return 1
     fi
     
     # Prepare client data splits
     if [ ! -f "${DATA_DIR}/client_1.csv" ]; then
         log_info "Generating client data splits..."
-        python "${PROJECT_ROOT}/data/prepare.py"
+        python "${PROJECT_ROOT}/data/prepare_data.py"
     fi
     
     log_info "✓ Data ready"

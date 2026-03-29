@@ -1,46 +1,32 @@
-# server/Dockerfile - PFedRec Server
+# client/Dockerfile - PFedRec Client
 # Python 3.12 compatible, pre-built PyTorch wheels
 
-FROM python:3.12-slim-bookworm
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
 # Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# Install system dependencies (minimal, no gcc needed for pre-built wheels)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
+# Install Python dependencies (torch is already available in base image)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --retries 20 --timeout 120 -r requirements.txt
 
-# Install PyTorch CPU version (pre-built wheel - NO compilation needed)
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
-
-# Copy server code
-COPY server/ ./server/
+# Copy client code
+COPY client/ ./client/
 COPY utils/ ./utils/
+COPY data/ ./data/
 COPY config.yaml .
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
 # Expose port
-EXPOSE 8000
+EXPOSE 8001
 
-# Run with gunicorn (production WSGI server)
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", \
-     "--timeout", "120", "--access-logfile", "-", \
-     "server.main:app"]
+# Run client
+CMD ["python", "-u", "client/main.py"]

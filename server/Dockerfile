@@ -1,40 +1,34 @@
-# client/Dockerfile - PFedRec Client
-# Identical to server for consistency
+# server/Dockerfile - PFedRec Server
+# Python 3.12 compatible, pre-built PyTorch wheels
 
-FROM python:3.12-slim-bookworm
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
+# Install Python dependencies (torch is already available in base image)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --retries 20 --timeout 120 -r requirements.txt
 
-# Install PyTorch CPU version (pre-built wheel)
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
-
-# Copy client code
-COPY client/ ./client/
+# Copy server code
+COPY server/ ./server/
 COPY utils/ ./utils/
-COPY data/ ./data/
 COPY config.yaml .
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port (for client API endpoints)
-EXPOSE 8001
+# Health check endpoint (without curl dependency)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)" || exit 1
 
-# Run client
-CMD ["python", "-u", "client/main.py"]
+# Expose port
+EXPOSE 8000
+
+# Run server with gunicorn
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "server.main:app"]

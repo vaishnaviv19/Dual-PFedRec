@@ -1,170 +1,110 @@
 # server/config.py
-"""
-Server Configuration Loader
-Loads and validates configuration from config.yaml
-"""
-
+"""Server configuration with YAML support"""
+import os
 import yaml
 from pathlib import Path
-from typing import Dict, List, Optional
-from pydantic import BaseModel, Field, validator
+from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
 
-
-class ModelConfig(BaseModel):
-    """Model architecture configuration (Paper Section 6.2)"""
-    item_embedding_dim: int = Field(32, ge=8, le=256)
-    score_function: Dict = Field(
-        default_factory=lambda: {
-            "hidden_dims": [64, 32],
-            "activation": "relu",
-            "output_activation": "sigmoid"
-        }
-    )
-
-
-class TrainingConfig(BaseModel):
-    """Training hyperparameters"""
-    # Optimizers
-    lr_score: float = Field(0.01, gt=0)  # η for θₛ
-    lr_item: float = Field(0.001, gt=0)  # η' for θₘ
-    batch_size: int = Field(256, ge=16, le=2048)
-    epochs_local: int = Field(1, ge=1, le=10)
+@dataclass
+class ServerConfig:
+    # Server Settings
+    host: str = "0.0.0.0"
+    port: int = 8000
+    workers: int = 4
     
-    # Negative sampling (Eq. 8)
-    negative_sampling_ratio: int = Field(4, ge=1, le=10)
-    
-    # Federated learning
-    total_rounds: int = Field(100, ge=10, le=1000)
-    clients_per_round: int = Field(10, ge=1)
-    min_clients_per_round: int = Field(2, ge=1)
-    aggregation: str = Field("fedavg", pattern="^(fedavg|fedprox)$")
-
-
-class DatasetConfig(BaseModel):
-    """Dataset configuration"""
-    name: str = "movielens-100k"
-    path: str = "data/ml-100k/"
+    # Model Settings
     num_items: int = 1682  # MovieLens-100K
-    min_interactions: int = 20
-    test_ratio: float = 0.2
-
-
-class PrivacyConfig(BaseModel):
-    """Privacy settings (Section 6.6)"""
-    enable_ldp: bool = False
-    ldp_lambda: float = Field(0.0, ge=0, le=1.0)
-
-
-class SystemConfig(BaseModel):
-    """System/network configuration"""
-    class ServerConfig(BaseModel):
-        host: str = "0.0.0.0"
-        port: int = 8000
-        workers: int = 4
+    embedding_dim: int = 32
     
-    class ClientConfig(BaseModel):
-        host: str = "0.0.0.0"
-        port: int = 8001
+    # Federated Learning Settings
+    total_rounds: int = 100
+    clients_per_round: int = 10
+    min_clients_per_round: int = 2
+    aggregation_method: str = "fedavg"
     
-    server: ServerConfig = Field(default_factory=ServerConfig)
-    client: ClientConfig = Field(default_factory=ClientConfig)
+    # Evaluation
+    eval_every: int = 1
+    metrics: list = field(default_factory=lambda: ["hr@10", "ndcg@10"])
     
-    class CommunicationConfig(BaseModel):
-        timeout: int = 30
-        retry_attempts: int = 3
+    # Privacy
+    privacy_enabled: bool = False
+    ldp_lambda: float = 0.0
     
-    communication: CommunicationConfig = Field(
-        default_factory=CommunicationConfig
-    )
-
-
-class LoggingConfig(BaseModel):
-    """Logging configuration"""
-    level: str = Field("INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    # System
+    log_level: str = "INFO"
     log_dir: str = "logs/"
-    tensorboard: bool = True
+    checkpoint_dir: str = "checkpoints/"
     save_checkpoints: bool = True
     checkpoint_every: int = 10
-
-
-class ServerConfig(BaseModel):
-    """Complete server configuration"""
-    model: ModelConfig = Field(default_factory=ModelConfig)
-    training: TrainingConfig = Field(default_factory=TrainingConfig)
-    dataset: DatasetConfig = Field(default_factory=DatasetConfig)
-    privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
-    system: SystemConfig = Field(default_factory=SystemConfig)
-    logging: LoggingConfig = Field(default_factory=LoggingConfig)
-    
-    # Convenience properties
-    @property
-    def embedding_dim(self) -> int:
-        return self.model.item_embedding_dim
-    
-    @property
-    def num_items(self) -> int:
-        return self.dataset.num_items
-    
-    @property
-    def aggregation_method(self) -> str:
-        return self.training.aggregation
-    
-    @property
-    def total_rounds(self) -> int:
-        return self.training.total_rounds
-    
-    @property
-    def clients_per_round(self) -> int:
-        return self.training.clients_per_round
-    
-    @property
-    def min_clients_per_round(self) -> int:
-        return self.training.min_clients_per_round
-    
-    @property
-    def eval_every(self) -> int:
-        return 1  # Evaluate every round
-    
-    @property
-    def privacy_enabled(self) -> bool:
-        return self.privacy.enable_ldp
-    
-    @property
-    def ldp_lambda(self) -> float:
-        return self.privacy.ldp_lambda
-    
-    @property
-    def log_level(self) -> str:
-        return self.logging.level
-    
-    @property
-    def log_dir(self) -> str:
-        return self.logging.log_dir
-    
-    @property
-    def checkpoint_dir(self) -> str:
-        return "checkpoints/"
-    
-    @property
-    def save_checkpoints(self) -> bool:
-        return self.logging.save_checkpoints
-    
-    @property
-    def checkpoint_every(self) -> int:
-        return self.logging.checkpoint_every
+    debug: bool = False
+    timeout: int = 30
     
     @classmethod
-    def from_yaml(cls, path: str = "config.yaml") -> 'ServerConfig':
+    def from_yaml(cls, config_path: str = "config.yaml") -> 'ServerConfig':
         """Load configuration from YAML file"""
-        config_path = Path(path)
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {path}")
+        path = Path(config_path)
+        if not path.exists():
+            print(f"⚠️ Config file {config_path} not found, using defaults")
+            return cls()
         
-        with open(config_path, 'r') as f:
-            config_dict = yaml.safe_load(f)
+        with open(path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        kwargs: Dict[str, Any] = {}
+
+        # System
+        system_cfg = config.get('system', {})
+        server_cfg = system_cfg.get('server', {})
+        defaults = cls()
+
+        kwargs['host'] = server_cfg.get('host', defaults.host)
+        kwargs['port'] = server_cfg.get('port', defaults.port)
+        kwargs['workers'] = server_cfg.get('workers', defaults.workers)
+
+        communication_cfg = system_cfg.get('communication', {})
+        kwargs['timeout'] = communication_cfg.get('timeout', defaults.timeout)
+
+        # Model
+        model_cfg = config.get('model', {})
+        kwargs['embedding_dim'] = model_cfg.get('item_embedding_dim', defaults.embedding_dim)
+
+        # Training
+        train_cfg = config.get('training', {})
+        kwargs['total_rounds'] = train_cfg.get('total_rounds', defaults.total_rounds)
+        kwargs['clients_per_round'] = train_cfg.get('clients_per_round', defaults.clients_per_round)
+        kwargs['aggregation_method'] = train_cfg.get('aggregation', defaults.aggregation_method)
+
+        # Evaluation
+        eval_cfg = config.get('evaluation', {})
+        kwargs['eval_every'] = eval_cfg.get('eval_every_round', defaults.eval_every)
+        kwargs['metrics'] = eval_cfg.get('metrics', defaults.metrics)
+
+        # Privacy
+        privacy_cfg = config.get('privacy', {})
+        kwargs['privacy_enabled'] = privacy_cfg.get('enable_ldp', defaults.privacy_enabled)
+        kwargs['ldp_lambda'] = privacy_cfg.get('ldp_lambda', defaults.ldp_lambda)
+
+        # Logging
+        logging_cfg = config.get('logging', {})
+        kwargs['log_level'] = logging_cfg.get('level', defaults.log_level)
+        kwargs['log_dir'] = logging_cfg.get('log_dir', defaults.log_dir)
+        kwargs['save_checkpoints'] = logging_cfg.get('save_checkpoints', defaults.save_checkpoints)
+        kwargs['checkpoint_every'] = logging_cfg.get('checkpoint_every', defaults.checkpoint_every)
         
-        return cls(**config_dict)
+        # Override with environment variables
+        env_overrides = {
+            'host': os.environ.get('SERVER_HOST'),
+            'port': os.environ.get('SERVER_PORT'),
+            'num_items': os.environ.get('NUM_ITEMS'),
+            'embedding_dim': os.environ.get('EMBEDDING_SIZE'),
+        }
+        for key, value in env_overrides.items():
+            if value is not None:
+                kwargs[key] = int(value) if key in ['port', 'num_items', 'embedding_dim'] else value
+        
+        return cls(**{k: v for k, v in kwargs.items() if k in cls.__dataclass_fields__})
     
-    def to_dict(self) -> Dict:
-        """Export config as dictionary"""
-        return self.model_dump()
+    def dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization"""
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}

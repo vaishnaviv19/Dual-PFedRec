@@ -1,255 +1,243 @@
-# server/main.py
-"""
-PFedRec Federated Server - FastAPI Entry Point
-Implements REST API for federated coordination
+"""server/main.py
+Simple FastAPI server for federated aggregation.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import torch
-import yaml
+import os
+import sys
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, Any, Optional
+
+import httpx
+import torch
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+# make sure /app is on path when running `python server/main.py`
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from server.aggregator import FederatedAggregator
 from server.config import ServerConfig
 from utils.logger import setup_logger, get_logger
 from utils.privacy import add_laplacian_noise
 
-# Initialize FastAPI app
+
 app = FastAPI(
     title="PFedRec Server",
-    description="Federated Recommendation Server with Dual Personalization",
+    description="Federated aggregation server",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
 )
 
-# CORS middleware for cross-origin requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Load configuration
 config = ServerConfig.from_yaml("config.yaml")
-logger = get_logger(__name__)
+setup_logger(level=config.log_level, log_dir=config.log_dir, name="pfedrec.server")
+logger = get_logger("pfedrec.server")
 
-# Initialize aggregator
 aggregator = FederatedAggregator(
     num_items=config.num_items,
     embedding_dim=config.embedding_dim,
-    aggregation_method=config.aggregation_method
+    aggregation_method=config.aggregation_method,
 )
 
-# Global state
-training_active = False
-round_metrics: List[Dict] = []
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize server on startup"""
-    logger.info(f"🚀 PFedRec Server starting on {config.host}:{config.port}")
-    logger.info(f"   Items: {config.num_items}, Embedding dim: {config.embedding_dim}")
-    setup_logger(config.log_level, config.log_dir)
+class ClientUpdatePayload(BaseModel):
+    client_id: str
+    round: int
+    embedding: list
+    num_samples: int = 1
+    metrics: Optional[Dict[str, Any]] = None
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint"""
+async def health_check() -> Dict[str, Any]:
     return {
         "status": "healthy",
-        "service": "pfedrec-server",
-        "version": "1.0.0",
-        "round": aggregator.current_round
+        "round": aggregator.current_round,
+        "pending_updates": len(aggregator.client_updates),
     }
 
 
 @app.get("/api/v1/global_embedding")
-async def get_global_embedding(client_id: str):
-    """
-    Client endpoint: Download current global item embedding
-    
-    GET /api/v1/global_embedding?client_id=123
-    """
+async def get_global_embedding(client_id: str) -> Dict[str, Any]:
     try:
         embedding = aggregator.get_global_embedding()
-        
-        logger.info(f"Client {client_id} downloaded global embedding "
-                   f"(round {aggregator.current_round})")
-        
         return {
             "success": True,
+            "client_id": client_id,
             "round": aggregator.current_round,
-            "embedding": embedding.tolist(),  # Serialize for JSON
-            "shape": list(embedding.shape)
+            "embedding": embedding.tolist(),
+            "shape": list(embedding.shape),
         }
     except Exception as e:
-        logger.error(f"Error serving embedding to client {client_id}: {e}")
+        logger.error(f"global_embedding failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/client_update")
-async def receive_client_update(update: Dict):
-    """
-    Client endpoint: Upload fine-tuned item embedding
-    
-    POST /api/v1/client_update
-    Body: {
-        "client_id": "123",
-        "round": 5,
-        "embedding": [[...], ...],  # num_items × embedding_dim
-        "num_samples": 150,
-        "metrics": {"loss": 0.45}
-    }
-    """
+async def receive_client_update(update: ClientUpdatePayload) -> Dict[str, Any]:
     try:
-        client_id = update.get("client_id")
-        round_num = update.get("round")
-        embedding_data = update.get("embedding")
-        num_samples = update.get("num_samples", 1)
-        
-        if not all([client_id, round_num, embedding_data]):
-            raise ValueError("Missing required fields")
-        
-        # Convert to tensor
-        embedding = torch.tensor(embedding_data)
-        
-        # Apply differential privacy if enabled (Section 6.6)
+        client_id = str(update.client_id)
+        round_num = int(update.round)
+        embedding_data = update.embedding
+        num_samples = int(update.num_samples)
+
+        embedding = torch.tensor(embedding_data, dtype=torch.float32)
+
         if config.privacy_enabled and config.ldp_lambda > 0:
-            embedding = add_laplacian_noise(
-                embedding, 
-                lambda_param=config.ldp_lambda
-            )
-            logger.debug(f"Added LDP noise (λ={config.ldp_lambda}) for client {client_id}")
-        
-        # Receive update
-        success = aggregator.receive_update(
+            embedding = add_laplacian_noise(embedding, config.ldp_lambda)
+
+        accepted = aggregator.receive_update(
             client_id=client_id,
             embedding=embedding,
             num_samples=num_samples,
-            round_num=round_num
+            round_num=round_num,
         )
-        
-        if not success:
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "error": "Update rejected"}
-            )
-        
-        # Attempt aggregation if enough clients
+        if not accepted:
+            return {"success": False, "error": "Update rejected: embedding shape mismatch"}
+
         new_embedding = aggregator.aggregate(min_clients=config.min_clients_per_round)
-        
-        response = {
+        return {
             "success": True,
             "client_id": client_id,
             "round": aggregator.current_round,
             "aggregated": new_embedding is not None,
-            "pending_clients": len(aggregator.client_updates)
+            "pending_clients": len(aggregator.client_updates),
         }
-        
-        logger.info(f"✓ Update from client {client_id} processed")
-        return response
-        
     except Exception as e:
-        logger.error(f"Error processing client update: {e}")
+        logger.error(f"client_update failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/status")
-async def get_training_status():
-    """Get current federated training status"""
-    return {
-        "active": training_active,
-        "current_round": aggregator.current_round,
-        "total_rounds": config.total_rounds,
-        "aggregator_stats": aggregator.get_stats(),
-        "config": {
-            "clients_per_round": config.clients_per_round,
-            "embedding_dim": config.embedding_dim
+@app.get("/api/v1/stats")
+async def get_stats() -> Dict[str, Any]:
+    return aggregator.get_stats()
+
+
+@app.get("/api/v1/metrics")
+async def get_client_metrics(client_id: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Proxy endpoint so client metrics appear in SERVER Swagger UI.
+
+    - If client_id is provided: return that client's metrics
+    - If client_id is omitted: return metrics for all configured clients
+    """
+    num_clients = int(os.environ.get("NUM_CLIENTS", "3"))
+    timeout = float(config.timeout)
+
+    async def _fetch_one(cid: int) -> Dict[str, Any]:
+        url = f"http://client_{cid}:8001/api/v1/metrics"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                return {"client_id": cid, "success": True, "data": data}
+        except Exception as e:
+            return {"client_id": cid, "success": False, "error": str(e)}
+
+    if client_id is not None:
+        if client_id < 1:
+            raise HTTPException(status_code=400, detail="client_id must be >= 1")
+        result = await _fetch_one(client_id)
+        if not result["success"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        return {
+            "success": True,
+            "source": "client",
+            "client_id": client_id,
+            "metrics": result["data"].get("metrics", {}),
+            "training_active": result["data"].get("training_active", False),
         }
+
+    results = []
+    hr_vals = []
+    ndcg_vals = []
+    for cid in range(1, num_clients + 1):
+        one = await _fetch_one(cid)
+        results.append(one)
+        if one["success"]:
+            metrics = one["data"].get("metrics", {})
+            hr = metrics.get("hr@10")
+            ndcg = metrics.get("ndcg@10")
+            if isinstance(hr, (int, float)):
+                hr_vals.append(float(hr))
+            if isinstance(ndcg, (int, float)):
+                ndcg_vals.append(float(ndcg))
+
+    return {
+        "success": True,
+        "source": "clients",
+        "num_clients": num_clients,
+        "results": results,
+        "average_metrics": {
+            "hr@10": (sum(hr_vals) / len(hr_vals)) if hr_vals else None,
+            "ndcg@10": (sum(ndcg_vals) / len(ndcg_vals)) if ndcg_vals else None,
+        },
     }
 
 
 @app.post("/api/v1/start_training")
-async def start_training(background_tasks: BackgroundTasks):
-    """Start federated training loop"""
-    global training_active
-    
-    if training_active:
-        return {"success": False, "error": "Training already active"}
-    
-    training_active = True
-    aggregator.reset()
-    
-    # Run training in background
-    background_tasks.add_task(run_federated_training)
-    
-    return {"success": True, "message": "Training started"}
+async def start_training(client_id: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Proxy endpoint so training can be started from SERVER Swagger UI.
 
+    - If client_id is provided: start that client's training
+    - If client_id is omitted: start all configured clients
+    """
+    num_clients = int(os.environ.get("NUM_CLIENTS", "3"))
+    timeout = float(config.timeout)
 
-async def run_federated_training():
-    """Background task: Execute federated training loop"""
-    global training_active, round_metrics
-    
-    logger.info(f"🎯 Starting federated training: {config.total_rounds} rounds")
-    
-    for round_num in range(1, config.total_rounds + 1):
-        aggregator.current_round = round_num
-        
-        # In real deployment: sample clients, send embeddings, wait for updates
-        # For simulation: aggregation happens when clients send updates
-        
-        # Log progress
-        if round_num % config.eval_every == 0:
-            stats = aggregator.get_stats()
-            logger.info(f"📊 Round {round_num}: {stats}")
-            
-            # Save checkpoint
-            if config.save_checkpoints and round_num % config.checkpoint_every == 0:
-                save_checkpoint(round_num)
-    
-    training_active = False
-    logger.info("✅ Federated training complete")
+    async def _start_one(cid: int) -> Dict[str, Any]:
+        url = f"http://client_{cid}:8001/api/v1/start_training"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url)
+                resp.raise_for_status()
+                return {"client_id": cid, "success": True, "data": resp.json()}
+        except Exception as e:
+            return {"client_id": cid, "success": False, "error": str(e)}
 
+    if client_id is not None:
+        if client_id < 1:
+            raise HTTPException(status_code=400, detail="client_id must be >= 1")
+        result = await _start_one(client_id)
+        if not result["success"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+        return {
+            "success": True,
+            "source": "client",
+            "client_id": client_id,
+            "response": result["data"],
+        }
 
-def save_checkpoint(round_num: int):
-    """Save model checkpoint"""
-    checkpoint_path = Path(config.checkpoint_dir) / f"round_{round_num}.pt"
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    torch.save({
-        "round": round_num,
-        "embedding": aggregator.get_global_embedding(),
-        "config": config.dict()
-    }, checkpoint_path)
-    
-    logger.info(f"💾 Checkpoint saved: {checkpoint_path}")
+    results = []
+    started = 0
+    for cid in range(1, num_clients + 1):
+        one = await _start_one(cid)
+        results.append(one)
+        if one["success"]:
+            started += 1
 
-
-@app.get("/api/v1/metrics")
-async def get_metrics(round_start: int = 0, round_end: Optional[int] = None):
-    """Get evaluation metrics for specified rounds"""
-    # In production: query metrics database
-    # For now: return placeholder
     return {
-        "rounds": list(range(round_start, round_end or aggregator.current_round)),
-        "hr@10": [],  # Populate from evaluation
-        "ndcg@10": []
+        "success": True,
+        "source": "clients",
+        "num_clients": num_clients,
+        "started_clients": started,
+        "results": results,
     }
+
+
+@app.post("/api/v1/reset")
+async def reset_server() -> Dict[str, Any]:
+    aggregator.reset()
+    return {"success": True, "message": "Server state reset"}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "server.main:app",
         host=config.host,
         port=config.port,
         log_level=config.log_level.lower(),
-        reload=config.debug
+        reload=config.debug,
     )

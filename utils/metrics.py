@@ -6,7 +6,7 @@ Evaluation Metrics for Recommendation (Section 6.1)
 """
 
 import numpy as np
-from typing import List, Union
+from typing import Dict, List, Union
 
 
 def hit_ratio(ranked_items: np.ndarray, ground_truth: List[int], k: int = 10) -> float:

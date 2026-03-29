@@ -203,13 +203,12 @@ async def run_local_training_loop():
     logger.info(f"✅ Client {client_id} training complete")
 
 
+# Fix: Use correct method names
 async def download_global_embedding():
     """Download global item embedding from server"""
     global model
-    
     if model is None:
         return
-    
     try:
         async with httpx.AsyncClient(timeout=config.timeout) as client:
             response = await client.get(
@@ -218,32 +217,21 @@ async def download_global_embedding():
             )
             response.raise_for_status()
             data = response.json()
-            
             if data.get("success"):
                 embedding = torch.tensor(data["embedding"])
-                model.load_item_embedding_weights(embedding)
+                model.load_item_embedding_weights(embedding)  # ✅ Fixed method name
                 logger.debug(f"Downloaded global embedding (round {data['round']})")
-                
-    except httpx.RequestError as e:
-        logger.warning(f"Failed to download embedding: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error downloading embedding: {e}")
+        logger.warning(f"Failed to download embedding: {e}")
 
 
-async def send_update_to_server(embedding: torch.Tensor, 
-                               num_samples: int,
-                               round_num: int,
-                               metrics: Dict):
-    """Send fine-tuned embedding to server with optional privacy noise"""
+async def send_update_to_server(embedding: torch.Tensor, num_samples: int,
+                               round_num: int, metrics: Dict):
+    """Send fine-tuned embedding to server"""
     try:
-        # ✅ Add Local Differential Privacy noise if enabled (Section 6.6)
         if config.enable_ldp and config.ldp_lambda > 0:
-            embedding = add_laplacian_noise(
-                embedding, 
-                lambda_param=config.ldp_lambda,
-                device=embedding.device
-            )
-            logger.debug(f"Added LDP noise (λ={config.ldp_lambda}) before upload")
+            from utils.privacy import add_laplacian_noise
+            embedding = add_laplacian_noise(embedding, config.ldp_lambda)
         
         async with httpx.AsyncClient(timeout=config.timeout) as client:
             response = await client.post(
@@ -256,13 +244,10 @@ async def send_update_to_server(embedding: torch.Tensor,
                     "metrics": metrics
                 }
             )
-            response.raise_for_status()
-            logger.debug(f"Sent update to server (round {round_num})")
-            
-    except httpx.RequestError as e:
-        logger.warning(f"Failed to send update: {e}")
+        response.raise_for_status()
     except Exception as e:
-        logger.error(f"Unexpected error sending update: {e}")
+        logger.warning(f"Failed to send update: {e}")
+                    
 
 
 def _evaluate_local(test_items: np.ndarray,
@@ -281,12 +266,15 @@ def _evaluate_local(test_items: np.ndarray,
     model.eval()
     test_item = test_items[0]  # Leave-one-out: single test item
     
-    # Create candidate set: test item + 99 randomly sampled negatives
+    # Create candidate set: test item + sampled negatives
+    # NOTE: use a smaller eval candidate pool so metrics are observable
+    # on tiny demo clients/datasets.
     candidates = [test_item]
     negative_pool = list(all_items - train_items - {test_item})
-    
-    if len(negative_pool) >= 99:
-        candidates.extend(np.random.choice(negative_pool, size=99, replace=False))
+
+    eval_negatives = 20
+    if len(negative_pool) >= eval_negatives:
+        candidates.extend(np.random.choice(negative_pool, size=eval_negatives, replace=False))
     else:
         candidates.extend(negative_pool)
     

@@ -1,18 +1,18 @@
 # data/sampler.py
-"""
-Negative Sampling Module
-Implements Eq. 8: I⁻ᵢ = I \ Iᵢ (uninteracted items)
+"""Negative Sampling Module.
+
+Implements Eq. 8: I⁻ᵢ = I \\ Iᵢ (uninteracted items)
 """
 
 import numpy as np
-from typing import List, Set, Union, Optional
+from typing import List, Set, Union, Optional, Tuple
 
 
 class NegativeSampler:
     """
     Negative sampler for implicit feedback recommendation
     
-    Samples negative items from I⁻ᵢ = I \ Iᵢ (Eq. 8)
+    Samples negative items from I⁻ᵢ = I \\ Iᵢ (Eq. 8)
     """
     
     def __init__(self, 
@@ -39,7 +39,7 @@ class NegativeSampler:
         
         Args:
             positive_items: Array of positive item IDs
-            negative_pool: Pre-computed I⁻ᵢ = I \ Iᵢ (optional, for efficiency)
+            negative_pool: Pre-computed I⁻ᵢ = I \\ Iᵢ (optional, for efficiency)
             ratio: Override default negative sampling ratio
             
         Returns:

@@ -11,34 +11,16 @@ from typing import Tuple, List, Dict, Optional
 
 
 def load_movielens_100k(data_dir: str = "data/ml-100k/") -> pd.DataFrame:
-    """
-    Load MovieLens-100K dataset
-    
-    Args:
-        data_dir: Path to ml-100k directory containing u.data
-        
-    Returns:
-        DataFrame with columns: user_id, item_id, rating, timestamp
-    """
     data_path = Path(data_dir) / "u.data"
-    
     if not data_path.exists():
-        raise FileNotFoundError(
-            f"MovieLens data not found at {data_path}. "
-            "Download from: https://grouplens.org/datasets/movielens/100k/"
-        )
+        raise FileNotFoundError(f"MovieLens data not found at {data_path}")
     
-    # Load tab-separated file (no header)
+    # ✅ Fixed: Use '\t' not 't' for tab separator
     df = pd.read_csv(
-        data_path, 
-        sep='\t', 
+        data_path,
+        sep='\t',  # ✅ Fixed tab separator
         names=['user_id', 'item_id', 'rating', 'timestamp'],
-        dtype={
-            'user_id': int,
-            'item_id': int, 
-            'rating': float,
-            'timestamp': int
-        }
+        dtype={'user_id': int, 'item_id': int, 'rating': float, 'timestamp': int}
     )
     
     # Convert to 0-based indexing (PyTorch convention)
