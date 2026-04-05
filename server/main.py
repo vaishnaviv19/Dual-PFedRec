@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -32,6 +33,30 @@ aggregator = FederatedAggregator(
     embedding_dim=config.embedding_dim,
     aggregation_method=config.aggregation_method,
 )
+
+
+def _get_client_base_url(cid: int) -> str:
+    """Resolve client URL for both docker-network and local host runs.
+
+    Priority:
+    1) CLIENT_URLS="1=http://127.0.0.1:8001,2=http://127.0.0.1:8002,..."
+    2) CLIENT_URL_TEMPLATE="http://client_{cid}:8001" (default)
+    """
+    raw_map = os.environ.get("CLIENT_URLS", "").strip()
+    if raw_map:
+        mapping: Dict[str, str] = {}
+        for pair in raw_map.split(","):
+            pair = pair.strip()
+            if not pair or "=" not in pair:
+                continue
+            k, v = pair.split("=", 1)
+            mapping[k.strip()] = v.strip().rstrip("/")
+        resolved = mapping.get(str(cid))
+        if resolved:
+            return resolved
+
+    template = os.environ.get("CLIENT_URL_TEMPLATE", "http://client_{cid}:8001")
+    return template.format(cid=cid).rstrip("/")
 
 
 class ClientUpdatePayload(BaseModel):
@@ -75,7 +100,23 @@ async def receive_client_update(update: ClientUpdatePayload) -> Dict[str, Any]:
         embedding_data = update.embedding
         num_samples = int(update.num_samples)
 
-        embedding = torch.tensor(embedding_data, dtype=torch.float32)
+        # Accept numeric 2D list; if sent as JSON string, try to parse once.
+        if isinstance(embedding_data, str):
+            try:
+                embedding_data = json.loads(embedding_data)
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail="'embedding' must be a 2D numeric list, not string",
+                )
+
+        try:
+            embedding = torch.tensor(embedding_data, dtype=torch.float32)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid 'embedding' format. Expected 2D numeric list.",
+            )
 
         if config.privacy_enabled and config.ldp_lambda > 0:
             embedding = add_laplacian_noise(embedding, config.ldp_lambda)
@@ -97,6 +138,8 @@ async def receive_client_update(update: ClientUpdatePayload) -> Dict[str, Any]:
             "aggregated": new_embedding is not None,
             "pending_clients": len(aggregator.client_updates),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"client_update failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -114,15 +157,28 @@ async def get_client_metrics(client_id: Optional[int] = None) -> Dict[str, Any]:
     timeout = float(config.timeout)
 
     async def _fetch_one(cid: int) -> Dict[str, Any]:
-        url = f"http://client_{cid}:8001/api/v1/metrics"
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                data = resp.json()
-                return {"client_id": cid, "success": True, "data": data}
-        except Exception as e:
-            return {"client_id": cid, "success": False, "error": str(e)}
+        candidates = [_get_client_base_url(cid), f"http://127.0.0.1:{8000 + cid}"]
+        seen = set()
+        urls = []
+        for base in candidates:
+            base = base.rstrip("/")
+            if base not in seen:
+                seen.add(base)
+                urls.append(f"{base}/api/v1/metrics")
+
+        last_error = None
+        for url in urls:
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return {"client_id": cid, "success": True, "data": data}
+            except Exception as e:
+                last_error = e
+                continue
+
+        return {"client_id": cid, "success": False, "error": str(last_error) if last_error else "unreachable"}
 
     if client_id is not None:
         if client_id < 1:
@@ -171,14 +227,27 @@ async def start_training(client_id: Optional[int] = None) -> Dict[str, Any]:
     timeout = float(config.timeout)
 
     async def _start_one(cid: int) -> Dict[str, Any]:
-        url = f"http://client_{cid}:8001/api/v1/start_training"
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(url)
-                resp.raise_for_status()
-                return {"client_id": cid, "success": True, "data": resp.json()}
-        except Exception as e:
-            return {"client_id": cid, "success": False, "error": str(e)}
+        candidates = [_get_client_base_url(cid), f"http://127.0.0.1:{8000 + cid}"]
+        seen = set()
+        urls = []
+        for base in candidates:
+            base = base.rstrip("/")
+            if base not in seen:
+                seen.add(base)
+                urls.append(f"{base}/api/v1/start_training")
+
+        last_error = None
+        for url in urls:
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(url)
+                    resp.raise_for_status()
+                    return {"client_id": cid, "success": True, "data": resp.json()}
+            except Exception as e:
+                last_error = e
+                continue
+
+        return {"client_id": cid, "success": False, "error": str(last_error) if last_error else "unreachable"}
 
     if client_id is not None:
         if client_id < 1:
