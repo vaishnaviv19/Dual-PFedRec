@@ -45,7 +45,7 @@ class ClientConfig:
         """Load configuration from YAML file"""
         path = Path(config_path)
         if not path.exists():
-            print(f"⚠️ Config file {config_path} not found, using defaults")
+            print(f"Config file {config_path} not found, using defaults")
             return cls()
         
         with open(path, 'r') as f:

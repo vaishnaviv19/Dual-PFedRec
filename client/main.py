@@ -1,9 +1,3 @@
-# client/main.py
-"""
-PFedRec Client - FastAPI Entry Point
-Implements local training with dual personalization (Algorithm 1)
-"""
-
 import os
 import sys
 import asyncio
@@ -22,28 +16,27 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from client.model import PFedRecModel
 from client.config import ClientConfig
-from data.loader import load_client_data  # ✅ Fixed: client-specific loader
+from data.loader import load_client_data  
 from data.sampler import NegativeSampler
 from utils.metrics import hit_ratio, ndcg
 from utils.logger import setup_logger, get_logger
-from utils.privacy import add_laplacian_noise  # ✅ Added: privacy
+from utils.privacy import add_laplacian_noise  
 
-# Initialize FastAPI app
 app = FastAPI(
     title="PFedRec Client",
     description="Client for Dual Personalization Federated Recommendation",
     version="1.0.0"
 )
 
-# Load configuration
+
 config = ClientConfig.from_yaml("config.yaml")
 logger = get_logger(__name__)
 
-# Global state
+
 client_id: Optional[str] = None
 model: Optional[PFedRecModel] = None
-train_data: Optional[Dict] = None  # ✅ Fixed: syntax
-test_data: Optional[Dict] = None    # ✅ Fixed: syntax
+train_data: Optional[Dict] = None  
+test_data: Optional[Dict] = None   
 negative_sampler: Optional[NegativeSampler] = None
 server_url: Optional[str] = None
 training_active: bool = False
@@ -74,13 +67,13 @@ async def startup_event():
     server_url = os.environ.get("SERVER_URL", "http://server:8000")
     data_file = os.environ.get("DATA_FILE", f"data/client_{client_id}.csv")
     
-    logger.info(f"🚀 Client {client_id} starting, server: {server_url}")
+    logger.info(f"Client {client_id} starting, server: {server_url}")
     
-    # ✅ Load data using correct function
+    # Load data using correct function
     logger.info(f"Loading data from {data_file}")
     user_id, interactions = load_client_data(data_file)  # Returns (user_id, item_array)
     
-    # Split data (leave-one-out) - simple: last item = test
+    # Split data (leave-one-out) -last item = test
     if len(interactions) > 1:
         train_items = interactions[:-1]
         test_items = [interactions[-1]]
@@ -97,7 +90,7 @@ async def startup_event():
         "items": np.array(test_items) if test_items else np.array([])
     }
     
-    # Initialize negative sampler (Eq. 8)
+    # Initialize negative sampler 
     negative_sampler = NegativeSampler(
         num_items=config.num_items,
         ratio=config.negative_sampling_ratio
@@ -113,7 +106,7 @@ async def startup_event():
     # Download initial global embedding
     await download_global_embedding()
     
-    logger.info(f"✓ Client {client_id} initialized with "
+    logger.info(f"Client {client_id} initialized with "
                f"{len(train_data['items'])} training items")
 
 
@@ -140,7 +133,7 @@ async def start_training():
         raise HTTPException(status_code=503, detail="Client not initialized")
     
     training_active = True
-    # ✅ Fixed: Use asyncio.create_task for async background task
+    #async background task
     asyncio.create_task(run_local_training_loop())
     
     return {"success": True, "message": f"Training started for client {client_id}"}
@@ -150,7 +143,7 @@ async def run_local_training_loop():
     """Execute local training with dual personalization (Algorithm 1)"""
     global training_active
     
-    logger.info(f"🎯 Client {client_id} starting local training")
+    logger.info(f"Client {client_id} starting local training")
     
     # Import trainer here to avoid circular imports
     from client.trainer import PFedRecTrainer
@@ -165,13 +158,13 @@ async def run_local_training_loop():
             # Download global embedding from server
             await download_global_embedding()
             
-            # Train locally (Algorithm 1: ClientUpdate)
+            # Train locally 
             updated_embedding, metrics = trainer.train_local(
                 positive_items=train_data["items"],
                 all_items=train_data["all_items"]
             )
             
-            # ✅ Evaluate on test set (if available)
+            # Evaluate on test set (if available)
             eval_metrics = {}
             if len(test_data["items"]) > 0 and round_num % config.eval_every == 0:
                 eval_metrics = _evaluate_local(
@@ -182,7 +175,7 @@ async def run_local_training_loop():
                 )
                 logger.info(f"Round {round_num} eval: {eval_metrics}")
             
-            # ✅ Send update to server (with optional privacy noise)
+            # Send update to server 
             await send_update_to_server(
                 embedding=updated_embedding,
                 num_samples=metrics["samples"],
@@ -192,7 +185,7 @@ async def run_local_training_loop():
             
             # Log progress
             if round_num % 10 == 0:
-                logger.info(f"✓ Client {client_id} completed round {round_num}: "
+                logger.info(f"Client {client_id} completed round {round_num}: "
                            f"loss={metrics['avg_loss']:.4f}")
             
         except Exception as e:
@@ -200,10 +193,10 @@ async def run_local_training_loop():
             continue
     
     training_active = False
-    logger.info(f"✅ Client {client_id} training complete")
+    logger.info(f"Client {client_id} training complete")
 
 
-# Fix: Use correct method names
+# Use correct method names
 async def download_global_embedding():
     """Download global item embedding from server"""
     global model
@@ -219,14 +212,13 @@ async def download_global_embedding():
             data = response.json()
             if data.get("success"):
                 embedding = torch.tensor(data["embedding"])
-                model.load_item_embedding_weights(embedding)  # ✅ Fixed method name
+                model.load_item_embedding_weights(embedding)  
                 logger.debug(f"Downloaded global embedding (round {data['round']})")
     except Exception as e:
         logger.warning(f"Failed to download embedding: {e}")
 
 
-async def send_update_to_server(embedding: torch.Tensor, num_samples: int,
-                               round_num: int, metrics: Dict):
+async def send_update_to_server(embedding: torch.Tensor, num_samples: int,round_num: int, metrics: Dict):
     """Send fine-tuned embedding to server"""
     try:
         if config.enable_ldp and config.ldp_lambda > 0:
@@ -250,25 +242,15 @@ async def send_update_to_server(embedding: torch.Tensor, num_samples: int,
                     
 
 
-def _evaluate_local(test_items: np.ndarray,
-                   train_items: set,
-                   all_items: set,
-                   k: int = 10) -> Dict[str, float]:
-    """
-    Local evaluation function (leave-one-out)
+def _evaluate_local(test_items: np.ndarray,train_items: set,all_items: set,k: int = 10) -> Dict[str, float]:
     
-    Returns:
-        metrics: {"hr@10": float, "ndcg@10": float}
-    """
     if model is None or len(test_items) == 0:
         return {"hr@10": 0.0, "ndcg@10": 0.0}
     
     model.eval()
-    test_item = test_items[0]  # Leave-one-out: single test item
+    test_item = test_items[0]  # single test item
     
-    # Create candidate set: test item + sampled negatives
-    # NOTE: use a smaller eval candidate pool so metrics are observable
-    # on tiny demo clients/datasets.
+    
     candidates = [test_item]
     negative_pool = list(all_items - train_items - {test_item})
 
@@ -330,7 +312,7 @@ async def reset_client():
     # Download fresh global embedding
     await download_global_embedding()
     
-    logger.info(f"🔄 Client {client_id} reset complete")
+    logger.info(f"Client {client_id} reset complete")
     return {"success": True, "message": "Client reset"}
 
 

@@ -1,15 +1,11 @@
-# server/aggregator.py
-"""Implements FedAvg aggregation for item embeddings (Algorithm 1, Line 6)"""
 import torch
 import numpy as np
 from typing import Dict, Optional, Tuple
 from server.config import ServerConfig
 
 class FederatedAggregator:
-    """Implements FedAvg aggregation for item embeddings"""
     
-    def __init__(self, num_items: int, embedding_dim: int, 
-                 aggregation_method: str = "fedavg"):
+    def __init__(self, num_items: int, embedding_dim: int, aggregation_method: str = "fedavg"):
         self.num_items = num_items
         self.embedding_dim = embedding_dim
         self.aggregation_method = aggregation_method
@@ -30,14 +26,8 @@ class FederatedAggregator:
             self.reset()
         return self.global_embedding.clone()
     
-    def receive_update(self, client_id: str, embedding: torch.Tensor, 
-                      num_samples: int, round_num: int) -> bool:
-        """
-        Receive and store client update
+    def receive_update(self, client_id: str, embedding: torch.Tensor, num_samples: int, round_num: int) -> bool:
         
-        Returns:
-            bool: Whether update was accepted
-        """
         # Validate embedding shape
         if embedding.shape != (self.num_items, self.embedding_dim):
             return False
@@ -51,19 +41,13 @@ class FederatedAggregator:
         return True
     
     def aggregate(self, min_clients: int = 2) -> Optional[torch.Tensor]:
-        """
-        Perform FedAvg aggregation if enough clients reported
-        
-        Returns:
-            Updated global embedding if aggregation performed, None otherwise
-        """
         if len(self.client_updates) < min_clients:
             return None
         
         # Calculate total samples for weighting
         total_samples = sum(u['samples'] for u in self.client_updates.values())
         
-        # Weighted average (FedAvg)
+        # Weighted average 
         aggregated = torch.zeros(self.num_items, self.embedding_dim)
         for update in self.client_updates.values():
             weight = update['samples'] / total_samples
@@ -73,7 +57,7 @@ class FederatedAggregator:
         self.current_round += 1
         self.client_updates = {}
         
-        print(f"✓ Round {self.current_round} aggregation complete")
+        print(f"Round {self.current_round} aggregation complete")
         return self.global_embedding.clone()
     
     def get_stats(self) -> Dict[str, any]:

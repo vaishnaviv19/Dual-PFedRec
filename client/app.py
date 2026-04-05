@@ -14,10 +14,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class FederatedClient:
-    """
-    Implements PFedRec ClientUpdate (Algorithm 1, Lines 4-11)
-    Dual Personalization: Score Function (local) + Item Embedding (federated)
-    """
     
     def __init__(self, client_id, data_file, server_url):
         self.client_id = client_id

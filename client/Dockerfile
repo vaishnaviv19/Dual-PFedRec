@@ -1,6 +1,3 @@
-# client/Dockerfile - PFedRec Client
-# Python 3.12 compatible, pre-built PyTorch wheels
-
 FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
 # Prevent interactive prompts during build

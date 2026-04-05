@@ -1,5 +1,3 @@
-# server/config.py
-"""Server configuration with YAML support"""
 import os
 import yaml
 from pathlib import Path
@@ -14,7 +12,7 @@ class ServerConfig:
     workers: int = 4
     
     # Model Settings
-    num_items: int = 1682  # MovieLens-100K
+    num_items: int = 1682  
     embedding_dim: int = 32
     
     # Federated Learning Settings
@@ -28,8 +26,8 @@ class ServerConfig:
     metrics: list = field(default_factory=lambda: ["hr@10", "ndcg@10"])
     
     # Privacy
-    privacy_enabled: bool = False
-    ldp_lambda: float = 0.0
+    privacy_enabled: bool = True
+    ldp_lambda: float = 0.4
     
     # System
     log_level: str = "INFO"
@@ -45,7 +43,7 @@ class ServerConfig:
         """Load configuration from YAML file"""
         path = Path(config_path)
         if not path.exists():
-            print(f"⚠️ Config file {config_path} not found, using defaults")
+            print(f"Config file {config_path} not found, using defaults")
             return cls()
         
         with open(path, 'r') as f:

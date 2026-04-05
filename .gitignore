@@ -1,5 +1,3 @@
-# .gitignore - Version control exclusions
-
 # Python
 __pycache__/
 *.py[cod]

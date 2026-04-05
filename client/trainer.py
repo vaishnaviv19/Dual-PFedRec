@@ -1,5 +1,3 @@
-"""PFedRec client-side trainer (Algorithm 1)."""
-
 from typing import Dict, Tuple
 
 import numpy as np

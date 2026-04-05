@@ -1,11 +1,3 @@
-# utils/visualization.py
-"""
-Visualization Utilities for Research Analysis
-- t-SNE embedding visualization (Paper Figure 2)
-- Training progress plots
-- Metric comparison charts
-"""
-
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -19,22 +11,7 @@ def visualize_embeddings_tsne(embeddings: torch.Tensor,
                              negative_items: List[int],
                              title: str = "Item Embedding Visualization",
                              save_path: Optional[str] = None) -> plt.Figure:
-    """
-    t-SNE visualization of item embeddings (Paper Figure 2)
-    
-    Shows separation between positive (interacted) and negative items
-    after personalization vs before.
-    
-    Args:
-        embeddings: (num_items, embedding_dim) tensor
-        positive_items: List of item IDs user interacted with
-        negative_items: List of sampled negative item IDs
-        title: Plot title
-        save_path: If provided, save figure to this path
-        
-    Returns:
-        fig: Matplotlib figure object
-    """
+   
     # Convert to numpy and select items to visualize
     embeddings_np = embeddings.detach().cpu().numpy()
     
@@ -78,7 +55,7 @@ def visualize_embeddings_tsne(embeddings: torch.Tensor,
     
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved visualization to {save_path}")
+        print(f"Saved visualization to {save_path}")
     
     return fig
 
@@ -88,19 +65,7 @@ def plot_training_progress(rounds: List[int],
                           hr_scores: List[float],
                           ndcg_scores: List[float],
                           save_path: Optional[str] = None) -> plt.Figure:
-    """
-    Plot training progress over federated rounds
     
-    Args:
-        rounds: List of round numbers
-        train_losses: Average training loss per round
-        hr_scores: HR@10 scores per round
-        ndcg_scores: NDCG@10 scores per round
-        save_path: Optional path to save figure
-        
-    Returns:
-        fig: Matplotlib figure with 3 subplots
-    """
     fig, axes = plt.subplots(3, 1, figsize=(12, 10))
     
     # Plot 1: Training Loss
@@ -133,19 +98,13 @@ def plot_training_progress(rounds: List[int],
     
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved training progress to {save_path}")
+        print(f"Saved training progress to {save_path}")
     
     return fig
 
 
 def compare_methods_results(results_df, save_path: Optional[str] = None):
-    """
-    Generate comparison table/plot for different methods (Paper Table 2)
     
-    Args:
-        results_df: DataFrame with columns: method, dataset, hr@10, ndcg@10
-        save_path: Optional path to save
-    """
     # Create grouped bar plot
     import pandas as pd
     
@@ -172,7 +131,6 @@ def compare_methods_results(results_df, save_path: Optional[str] = None):
     axes[0].legend()
     axes[0].grid(True, alpha=0.3, axis='y')
     
-    # NDCG@10 comparison
     for i, dataset in enumerate(datasets[:2]):
         subset = results_df[results_df['dataset'] == dataset]
         x = np.arange(len(methods))

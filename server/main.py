@@ -1,7 +1,3 @@
-"""server/main.py
-Simple FastAPI server for federated aggregation.
-"""
-
 import os
 import sys
 from pathlib import Path
@@ -113,12 +109,7 @@ async def get_stats() -> Dict[str, Any]:
 
 @app.get("/api/v1/metrics")
 async def get_client_metrics(client_id: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Proxy endpoint so client metrics appear in SERVER Swagger UI.
-
-    - If client_id is provided: return that client's metrics
-    - If client_id is omitted: return metrics for all configured clients
-    """
+    
     num_clients = int(os.environ.get("NUM_CLIENTS", "3"))
     timeout = float(config.timeout)
 
@@ -176,12 +167,6 @@ async def get_client_metrics(client_id: Optional[int] = None) -> Dict[str, Any]:
 
 @app.post("/api/v1/start_training")
 async def start_training(client_id: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Proxy endpoint so training can be started from SERVER Swagger UI.
-
-    - If client_id is provided: start that client's training
-    - If client_id is omitted: start all configured clients
-    """
     num_clients = int(os.environ.get("NUM_CLIENTS", "3"))
     timeout = float(config.timeout)
 

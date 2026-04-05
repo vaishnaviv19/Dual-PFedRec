@@ -1,30 +1,12 @@
-# data/sampler.py
-"""Negative Sampling Module.
 
-Implements Eq. 8: I⁻ᵢ = I \\ Iᵢ (uninteracted items)
-"""
 
 import numpy as np
 from typing import List, Set, Union, Optional, Tuple
 
 
 class NegativeSampler:
-    """
-    Negative sampler for implicit feedback recommendation
     
-    Samples negative items from I⁻ᵢ = I \\ Iᵢ (Eq. 8)
-    """
-    
-    def __init__(self, 
-                 num_items: int,
-                 ratio: int = 4,
-                 seed: Optional[int] = None):
-        """
-        Args:
-            num_items: Total number of items in catalog (|I|)
-            ratio: Number of negatives to sample per positive
-            seed: Random seed for reproducibility
-        """
+    def __init__(self, num_items: int, ratio: int = 4, seed: Optional[int] = None):
         self.num_items = num_items
         self.ratio = ratio
         self.rng = np.random.RandomState(seed)
@@ -34,17 +16,7 @@ class NegativeSampler:
               positive_items: Union[np.ndarray, List[int]],
               negative_pool: Optional[Set[int]] = None,
               ratio: Optional[int] = None) -> np.ndarray:
-        """
-        Sample negative items for a batch of positives
         
-        Args:
-            positive_items: Array of positive item IDs
-            negative_pool: Pre-computed I⁻ᵢ = I \\ Iᵢ (optional, for efficiency)
-            ratio: Override default negative sampling ratio
-            
-        Returns:
-            Array of sampled negative item IDs
-        """
         if ratio is None:
             ratio = self.ratio
         
@@ -83,17 +55,7 @@ class NegativeSampler:
     def sample_for_user(self,
                        user_positive_items: Set[int],
                        n_samples: int) -> np.ndarray:
-        """
-        Sample negatives specifically for a user's positive items
         
-        Args:
-            user_positive_items: Set of items user has interacted with (Iᵢ)
-            n_samples: Number of negative samples to return
-            
-        Returns:
-            Array of negative item IDs
-        """
-        # Eq. 8: I⁻ᵢ = I \ Iᵢ
         negative_pool = self.all_items - user_positive_items
         
         if len(negative_pool) == 0:

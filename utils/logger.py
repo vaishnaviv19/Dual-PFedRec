@@ -1,9 +1,3 @@
-# utils/logger.py
-"""
-Logging Utilities
-Structured logging with TensorBoard integration
-"""
-
 import logging
 import sys
 from pathlib import Path
@@ -12,7 +6,6 @@ from typing import Optional, Dict, Union
 import json
 import numpy as np
 
-# Optional: TensorBoard
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_AVAILABLE = True
@@ -20,35 +13,24 @@ except ImportError:
     TENSORBOARD_AVAILABLE = False
 
 
-def setup_logger(level: str = "INFO", 
-                log_dir: str = "logs/",
-                name: str = "pfedrec") -> logging.Logger:
+def setup_logger(level: str = "INFO", log_dir: str = "logs/",name: str = "pfedrec") -> logging.Logger:
     """
-    Configure structured logging with file and console handlers
-    
-    Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_dir: Directory for log files
-        name: Logger name
+    level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    log_dir: Directory for log files
+    name: Logger name
         
-    Returns:
-        Configured logger instance
+    Returns: Configured logger instance
     """
-    # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     
-    # Clear existing handlers
     logger.handlers.clear()
     
-    # Create log directory
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
     
-    # Timestamp for log file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # File handler (JSON format for parsing)
     file_handler = logging.FileHandler(
         log_path / f"{name}_{timestamp}.log",
         mode='a',
@@ -56,7 +38,6 @@ def setup_logger(level: str = "INFO",
     )
     file_handler.setLevel(logging.DEBUG)
     
-    # Console handler (human-readable)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(getattr(logging, level.upper(), logging.INFO))
     
@@ -74,7 +55,6 @@ def setup_logger(level: str = "INFO",
     file_handler.setFormatter(file_formatter)
     console_handler.setFormatter(console_formatter)
     
-    # Add handlers
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     
@@ -88,7 +68,6 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     
     logger = logging.getLogger(name)
     
-    # If no handlers, set up basic config
     if not logger.handlers:
         logging.basicConfig(
             level=logging.INFO,
@@ -101,8 +80,6 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
 
 class TensorBoardLogger:
     """
-    TensorBoard wrapper for experiment tracking
-    
     Usage:
         tb = TensorBoardLogger("logs/my_experiment")
         tb.log_scalar("loss", 0.45, step=10)
@@ -110,11 +87,7 @@ class TensorBoardLogger:
     """
     
     def __init__(self, log_dir: str, flush_secs: int = 30):
-        """
-        Args:
-            log_dir: TensorBoard log directory
-            flush_secs: How often to flush data to disk
-        """
+
         if not TENSORBOARD_AVAILABLE:
             self.writer = None
             get_logger(__name__).warning(

@@ -1,6 +1,3 @@
-# server/Dockerfile - PFedRec Server
-# Python 3.12 compatible, pre-built PyTorch wheels
-
 FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive

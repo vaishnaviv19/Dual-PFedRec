@@ -1,31 +1,10 @@
-# data/splitter.py
-"""
-Data Splitting Utilities
-Implements leave-one-out evaluation (Paper Section 6.1)
-"""
-
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Dict, Optional  # ✅ Added Optional import
 
 
-def leave_one_out_split(interactions: np.ndarray, 
-                       test_ratio: float = 0.2,
-                       random_state: int = 42) -> Tuple[List[int], List[int]]:
-    """
-    Leave-one-out split for evaluation (Paper Section 6.1)
+def leave_one_out_split(interactions: np.ndarray, test_ratio: float = 0.2,random_state: int = 42) -> Tuple[List[int], List[int]]:
     
-    For each user: last interaction = test, rest = train
-    
-    Args:
-        interactions: Array of item IDs the user interacted with
-        test_ratio: Fraction of interactions to use for testing
-                   (for leave-one-out, this is typically just 1 item)
-        random_state: Random seed for reproducibility
-        
-    Returns:
-        Tuple of (train_items, test_items) lists
-    """
     if len(interactions) == 0:
         return [], []
     
@@ -47,21 +26,8 @@ def leave_one_out_split(interactions: np.ndarray,
     return train_items, test_items
 
 
-def split_dataset_by_users(df: pd.DataFrame, 
-                          n_clients: Optional[int] = None,  # ✅ Now works
-                          min_interactions: int = 20) -> Dict[int, pd.DataFrame]:
-    """
-    Split dataset into client-specific DataFrames (one user = one client)
+def split_dataset_by_users(df: pd.DataFrame, n_clients: Optional[int] = None,  min_interactions: int = 20) -> Dict[int, pd.DataFrame]:
     
-    Args:
-        df: Full interaction DataFrame
-        n_clients: Number of clients to create (None = all users)
-        min_interactions: Filter users with fewer interactions
-        
-    Returns:
-        Dict mapping client_id to user-specific DataFrame
-    """
-    # Filter users by interaction count
     if min_interactions > 0:
         user_counts = df.groupby('user_id').size()
         valid_users = user_counts[user_counts >= min_interactions].index
@@ -84,24 +50,8 @@ def split_dataset_by_users(df: pd.DataFrame,
     return client_data
 
 
-def create_non_iid_splits(df: pd.DataFrame,
-                         n_clients: int,
-                         alpha: float = 0.5,
-                         random_state: int = 42) -> Dict[int, pd.DataFrame]:
-    """
-    Create non-IID data splits using Dirichlet distribution
+def create_non_iid_splits(df: pd.DataFrame, n_clients: int,alpha: float = 0.5,random_state: int = 42) -> Dict[int, pd.DataFrame]:
     
-    More realistic federated setting where users have different item preferences
-    
-    Args:
-        df: Full interaction DataFrame
-        n_clients: Number of clients to create
-        alpha: Dirichlet concentration parameter (lower = more non-IID)
-        random_state: Random seed
-        
-    Returns:
-        Dict mapping client_id to client-specific DataFrame
-    """
     rng = np.random.RandomState(random_state)
     
     # Group interactions by item
