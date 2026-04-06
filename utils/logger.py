@@ -190,7 +190,7 @@ class ExperimentLogger:
         else:
             self.tb = None
         
-        self.logger.info(f"🚀 Experiment '{experiment_name}' started")
+        self.logger.info(f"Experiment '{experiment_name}' started")
     
     def info(self, msg: str, **kwargs):
         """Log info message"""
@@ -210,7 +210,7 @@ class ExperimentLogger:
     
     def log_metric(self, name: str, value: float):
         """Log a metric and advance step"""
-        self.logger.info(f"📊 {name}: {value:.4f}")
+        self.logger.info(f"{name}: {value:.4f}")
         if self.tb:
             self.tb.log_scalar(f"metrics/{name}", value, self.step)
     
@@ -220,7 +220,7 @@ class ExperimentLogger:
         
         # Console log
         metrics_str = ", ".join(f"{k}={v:.4f}" for k, v in metrics.items())
-        self.logger.info(f"🔄 Round {round_num}: {metrics_str}")
+        self.logger.info(f"Round {round_num}: {metrics_str}")
         
         # TensorBoard
         if self.tb:
@@ -239,7 +239,7 @@ class ExperimentLogger:
             "norm": float(np.linalg.norm(embedding))
         }
         
-        self.logger.debug(f"📐 {embedding_name} stats: {stats}")
+        self.logger.debug(f"{embedding_name} stats: {stats}")
         
         if self.tb:
             self.tb.log_scalars(f"embeddings/{embedding_name}", stats, step)
@@ -262,11 +262,11 @@ class ExperimentLogger:
             **checkpoint
         }, save_path)
         
-        self.logger.info(f"💾 Checkpoint saved: {save_path}")
+        self.logger.info(f"Checkpoint saved: {save_path}")
     
     def close(self):
         """Cleanup resources"""
-        self.logger.info(f"✅ Experiment '{self.name}' completed")
+        self.logger.info(f" Experiment '{self.name}' completed")
         if self.tb:
             self.tb.close()
     

@@ -31,8 +31,8 @@ class ClientConfig:
     eval_every: int = 1
     
     # Privacy
-    enable_ldp: bool = False
-    ldp_lambda: float = 0.0
+    enable_ldp: bool = True
+    ldp_lambda: float = 0.4
     
     # System
     log_level: str = "INFO"

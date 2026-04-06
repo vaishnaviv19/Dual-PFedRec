@@ -36,12 +36,7 @@ aggregator = FederatedAggregator(
 
 
 def _get_client_base_url(cid: int) -> str:
-    """Resolve client URL for both docker-network and local host runs.
-
-    Priority:
-    1) CLIENT_URLS="1=http://127.0.0.1:8001,2=http://127.0.0.1:8002,..."
-    2) CLIENT_URL_TEMPLATE="http://client_{cid}:8001" (default)
-    """
+    
     raw_map = os.environ.get("CLIENT_URLS", "").strip()
     if raw_map:
         mapping: Dict[str, str] = {}

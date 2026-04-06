@@ -1,10 +1,3 @@
-# utils/metrics.py
-"""
-Evaluation Metrics for Recommendation (Section 6.1)
-- Hit Ratio @ K (HR@K)
-- Normalized Discounted Cumulative Gain @ K (NDCG@K)
-"""
-
 import numpy as np
 from typing import Dict, List, Union
 
